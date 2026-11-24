@@ -213,11 +213,12 @@ export function guessCovers(opp, readerP, bk) {
   for (let k = 0; k < 6; k++) g.push([BCOV[pickHabit(opp.covMem, bk, readerP.read, 9)], BCOV[pickHabit(opp.covMem, bk, readerP.read, 9)]]);
   return g;
 }
+/* laneBias (optional, in ctx): extra value per lane [0,1,2], e.g. to aim more at one player */
 export function aiShot(st, hp, defs, dps, inShot, guess, ctx) {
   const N = hp.iq > 0.7 ? 10 : hp.iq > 0.3 ? 6 : 3;
   let best = null, bv = -9;
   options(inShot).forEach((c) => {
-    const v = evalChoice(st, hp, c, defs, dps, guess, N, { ...ctx, inShot }) + gauss() * 0.35 * (1 - hp.iq);
+    const v = evalChoice(st, hp, c, defs, dps, guess, N, { ...ctx, inShot }) + gauss() * 0.35 * (1 - hp.iq) + ((ctx && ctx.laneBias && ctx.laneBias[c.l]) || 0);
     if (v > bv) { bv = v; best = c; }
   });
   return best;

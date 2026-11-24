@@ -15,8 +15,8 @@ export default function CameraRig() {
     const pos = portrait ? new THREE.Vector3(0, 11, 15.8) : new THREE.Vector3(0, 8.2, 16.5);
     const tgt = portrait ? new THREE.Vector3(0, 0, -0.2) : new THREE.Vector3(0, 0, -1.6);
     if (deciding) {
-      pos.lerp(new THREE.Vector3(me[0] * 0.5, pos.y * 0.8, me[1] + 8.5), 0.35);
-      tgt.lerp(new THREE.Vector3(me[0] * 0.4, 0.4, -4), 0.4);
+      pos.lerp(new THREE.Vector3(me[0] * 0.5, pos.y * 1.08, me[1] + 8), 0.35);
+      tgt.lerp(new THREE.Vector3(me[0] * 0.4, 0, -3.6), 0.45);
     }
     /* phones: the shot rail sits on the left, so frame the court a little to the right */
     if (portrait) { pos.x -= 1.1; tgt.x -= 1.1; }

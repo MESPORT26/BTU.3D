@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useGame, startMatch, quitMatch, nextPoint, pickShot, setSetting } from '../game.js';
+import { useGame, startMatch, quitMatch, nextPoint, pickShot, setSetting, dismissHowto, showHowto } from '../game.js';
 import { SHOT_NAMES } from '../rules/engine.js';
 
 const SHOTS = ['serve', 'smash', 'push', 'hook', 'neutral', 'lob', 'drop', 'block'];
@@ -57,7 +57,8 @@ function Lobby() {
         <p className="sub">Read the ball, pick the right shot, put it where they aren't.</p>
         <Settings />
         <button className="cta" onClick={startMatch}>Play</button>
-        <small className="build">3D build 0.1 · first to 7, win by 2</small>
+        <button className="ghost" onClick={showHowto}>How to play</button>
+        <small className="build">3D build 0.3 · first to 7, win by 2</small>
       </div>
     </div>
   );
@@ -84,11 +85,11 @@ function Rail() {
   if (!rail) return null;
   /* Only show the rail while you decide, and after a point that has ✗/✓ marks */
   if (!(phase === 'SHOT' || phase === 'SERVE' || rail.x)) return null;
-  const ids = SHOTS.filter((id) => rail.legal[id] || id === rail.x || id === rail.ok);
+  const choosing = phase === 'SHOT' && !rail.sel;
   return (
-    <div className="rail" role="group" aria-label="Your shot">
-      {ids.map((id) => {
-        const off = rail.mode !== 'shot' || !rail.legal[id];
+    <div className={'rail' + (choosing ? ' choosing' : '')} role="group" aria-label="Your shot">
+      {SHOTS.map((id) => {
+        const off = phase === 'SERVE' ? id !== 'serve' : rail.mode !== 'shot' || !rail.legal[id];
         const cls = rail.x === id ? 'pk-x' : rail.ok === id ? 'pk-ok' : '';
         return (
           <button key={id} className={cls} disabled={off && !cls && rail.sel !== id} aria-pressed={rail.sel === id} onClick={() => pickShot(id)}>
@@ -97,6 +98,69 @@ function Rail() {
           </button>
         );
       })}
+    </div>
+  );
+}
+
+/* What each shot does, in one line */
+const TIPS = {
+  smash: 'Hit down hard. Only from a high ball (above 2 m), close to the net.',
+  push: 'Flat and fast at their feet. Needs the ball above the net.',
+  hook: 'Overhead from behind your head, when they lob over you.',
+  block: 'Soak up their smash or push and put it back.',
+  neutral: 'Safe, medium height. Keeps the rally going from a low ball.',
+  lob: 'High over them to the back. Great when they rush the net.',
+  drop: 'Soft and short, just over the net. Great when they stay back.',
+  serve: 'Start the point. Deep serves are safer; near the lines is bolder.',
+};
+
+function Steps({ now }) {
+  return (
+    <ol className="steps">
+      <li className={now === 1 ? 'on' : now > 1 ? 'done' : ''}><i>1</i>Pick a shot</li>
+      <li className={now === 2 ? 'on' : ''}><i>2</i>Tap their court</li>
+    </ol>
+  );
+}
+
+/* The coaching bar: tells you exactly what to do now, like the 2D game */
+function CoachBar() {
+  const phase = useGame((s) => s.phase);
+  const rail = useGame((s) => s.rail);
+  const pick = useGame((s) => s.settings.pick);
+  if (phase === 'SERVE') return (
+    <div className="coach"><b>Your serve</b><p>Tap a zone 1–5 on their court. Where you tap is where you aim: deep is safer, near the lines is bolder but misses more.</p></div>
+  );
+  if (phase === 'SHOT') {
+    const sel = rail && rail.sel;
+    return (
+      <div className="coach">
+        <Steps now={sel ? 2 : 1} />
+        {sel
+          ? <p><b>{SHOT_NAMES[sel]}:</b> {pick === 'auto' && rail.hint ? rail.hint + '. ' : ''}{TIPS[sel]} <em>Now tap where on their court.</em></p>
+          : <p>Look at the ball height above, and where they're standing. Pick the shot on the left that fits. The wrong one loses the point.</p>}
+      </div>
+    );
+  }
+  return null;
+}
+
+function HowTo() {
+  const open = useGame((s) => s.howto);
+  if (!open) return null;
+  return (
+    <div className="howto" role="dialog" aria-label="How to play">
+      <div className="card">
+        <p className="kicker">How to play</p>
+        <h2>Read it. Reach it. Place it.</h2>
+        <ol>
+          <li><span className="n" style={{ background: '#2ECC71' }}>1</span><div><b>Tap the ring</b><p>When they hit to your side, a ring shows where the ball will land. Tap it fast to run there. Green = early, red = too late.</p></div></li>
+          <li><span className="n" style={{ background: '#00C2B8' }}>2</span><div><b>Pick your shot</b><p>The game slows down. Choose a shot on the left that suits the ball: high and close = smash, low = lob or drop.</p></div></li>
+          <li><span className="n" style={{ background: '#FF9F1C' }}>3</span><div><b>Tap where to hit</b><p>Tap their court. Aim where they aren't. A wrong shot gets a ✗ and the right one a ✓, with the reason.</p></div></li>
+        </ol>
+        <p className="small">Your partner covers their side automatically. First to 7, win by 2.</p>
+        <button className="cta" onClick={dismissHowto}>Let's play</button>
+      </div>
     </div>
   );
 }
@@ -156,11 +220,9 @@ export default function Hud() {
   const score = useGame((s) => s.score);
   const phase = useGame((s) => s.phase);
   const prompt = useGame((s) => s.prompt);
-  const hint = useGame((s) => s.rail && s.rail.hint);
   const odds = useGame((s) => s.odds);
-  const sel = useGame((s) => s.rail && s.rail.sel);
   const [menu, setMenu] = useState(false);
-  if (screen === 'lobby') return <Lobby />;
+  if (screen === 'lobby') return <><Lobby /><HowTo /></>;
   if (screen === 'over') return <Over />;
   return (
     <div className="hud">
@@ -177,7 +239,8 @@ export default function Hud() {
           <span>{odds && !phase ? `That shot: ${odds.win}% winner · ${odds.err}% error` : prompt}</span>
         </div>
       )}
-      {phase === 'SHOT' && <p className="hint">{hint ? hint + ' · tap where to hit' : sel ? 'Tap their court to aim' : 'Pick your shot on the left'}</p>}
+      <CoachBar />
+      <HowTo />
       <Wind />
       <Rail />
       <Result />

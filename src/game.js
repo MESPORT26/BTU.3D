@@ -11,7 +11,7 @@ const load = (k, d) => { try { const v = localStorage.getItem('btu3d-' + k); ret
 const save = (k, v) => { try { localStorage.setItem('btu3d-' + k, JSON.stringify(v)); } catch { /* private mode */ } };
 
 export const KEYS = ['me', 'mate', 'opp0', 'opp1'];
-const keyOf = (team, i) => (team === 0 ? (i === 0 ? 'me' : 'mate') : i === 0 ? 'opp0' : 'opp1');
+export const keyOf = (team, i) => (team === 0 ? (i === 0 ? 'me' : 'mate') : i === 0 ? 'opp0' : 'opp1');
 
 export const useGame = create(() => ({
   screen: 'lobby', // lobby | play | over
@@ -127,6 +127,7 @@ let MATCH = null;
 export function startMatch() {
   MATCH = { points: 0, me: 0, them: 0, landMem: [{}, {}], covMem: [{}, {}] };
   set({ screen: 'play', score: { me: 0, them: 0 }, result: null, windAngle: Math.random() * Math.PI * 2 });
+  if (!load('howto', false)) { pendingStart = true; set({ howto: true }); return; }
   newPoint();
 }
 export function quitMatch() { epoch++; timers = []; clearReal(); setSlowMo(false); set({ screen: 'lobby', phase: '', rail: null, targets: null, ring: null, clock: null, result: null, ball: { mode: 'hidden', n: get().ball.n + 1 } }); }
@@ -164,7 +165,7 @@ function newPoint() {
     holdBall(w3(1, BT.pos[1][0], 1.0));
     set({ prompt: 'They serve' });
     after(1.4, () => {
-      const c = { shot: 'serve', d: 'deep', l: (Math.random() * 3) | 0, risk: Math.random() < 0.25 ? 'bold' : Math.random() < 0.5 ? 'safe' : 'normal' };
+      const rl = Math.random(), c = { shot: 'serve', d: 'deep', l: rl < 0.5 ? 0 : rl < 0.8 ? 1 : 2, risk: Math.random() < 0.25 ? 'bold' : Math.random() < 0.5 ? 'safe' : 'normal' };
       BT.st = { pos: BT.pos[1][0], h: 2.6, B: 1, timing: 'on' };
       BT.hit = [1, 0];
       BT.inShot = null;
@@ -190,7 +191,7 @@ function startClock(onTimeout) {
 
 /* ---------- Your serve ---------- */
 function askServe() {
-  set({ phase: 'SERVE', prompt: 'Your serve · tap where to aim', rail: { legal: { serve: 1 }, sel: 'serve', mode: 'serve' }, targets: { serve: true } });
+  set({ phase: 'SERVE', prompt: 'Your serve · tap a zone 1–5', rail: { legal: { serve: 1 }, sel: 'serve', mode: 'serve' }, targets: { serve: true } });
   startClock(() => commitServe({ shot: 'serve', d: 'deep', l: 1, risk: 'safe' }));
 }
 export function commitServe(c) {
@@ -295,7 +296,8 @@ function reveal(choice) {
       return;
     }
     const g = R.guessCovers(T[0], rp, R.band(h));
-    const c2 = R.aiShot(BT.st, rp, BT.pos[0], T[0].p, BT.inShot, g, ctx(1, BT.inShot));
+    /* they aim more at you (left and middle) than at your partner */
+    const c2 = R.aiShot(BT.st, rp, BT.pos[0], T[0].p, BT.inShot, g, { ...ctx(1, BT.inShot), laneBias: [0.16, 0.1, 0] });
     hitThen(1, r.i, c2.shot, () => receive(c2));
   });
 }
@@ -322,7 +324,7 @@ function receive(choice) {
     return;
   }
   const land = r.land, tB = r.tBall, s = get().settings;
-  const me = 0, onMate = land[1] >= 4, ri = onMate ? 1 : me, auto = ri !== me;
+  const me = 0, onMate = land[1] >= 4.6, ri = onMate ? 1 : me, auto = ri !== me;
   let W = R.receiveWindow(choice.shot, land, tB, s.level, s.pace);
   if ((load('taught', 0) || 0) < 3) W = Math.round(W * 1.5);
   const lw = toWorld(0, land);
@@ -332,7 +334,7 @@ function receive(choice) {
   fly(from, w3(0, land, 0.07), APEX[choice.shot] ?? 1.5, W / 1000);
   const t0 = performance.now();
   let done = false;
-  set({ ring: { pos: lw, W, t0, auto, n: Math.random() }, phase: auto ? 'PARTNER' : 'RETURN', prompt: auto ? "Partner's ball" : 'Tap where it lands!' });
+  set({ ring: { pos: lw, W, t0, auto, n: Math.random() }, phase: auto ? 'PARTNER' : 'RETURN', prompt: auto ? "Their " + R.SHOT_NAMES[choice.shot].toLowerCase() + " · your partner takes it" : 'Their ' + R.SHOT_NAMES[choice.shot].toLowerCase() + ' · tap the ring to run there' });
   const go = () => {
     if (done) return; done = true; clearReal();
     const tt = Math.min(1, (performance.now() - t0) / W);
@@ -385,15 +387,14 @@ export function tapLanding() { if (BT && BT.tapGo) BT.tapGo(); }
 
 /* ---------- Your shot: pick it, then tap where to aim (slow motion) ---------- */
 function askShot() {
-  const st = BT.st, legal = R.legalShots(BT.inShot);
+  const st = BT.st, legal = { smash: 1, push: 1, hook: 1, block: 1, neutral: 1, lob: 1, drop: 1 }; // every shot is yours to choose; the wrong one costs the point
   let [best, why, ok] = R.coach(st, BT.inShot, BT.pos[1], BT.inLand);
-  if (!legal[best]) { best = 'neutral'; why = 'Neutral'; ok = ['neutral']; }
-  BT.coach = { best, why, ok };
+    BT.coach = { best, why, ok };
   const choose = get().settings.pick === 'choose';
   setSlowMo(true);
   set({
     phase: 'SHOT',
-    prompt: 'Your shot · ball at ' + st.h.toFixed(1) + ' m, ' + (st.h >= R.NET_H ? 'above' : 'below') + ' the net',
+    prompt: 'Ball ' + st.h.toFixed(1) + ' m · ' + (st.h >= R.NET_H ? 'above' : 'below') + ' the net',
     rail: { legal, sel: choose ? null : best, mode: 'shot', hint: choose ? null : why },
     targets: choose ? null : { serve: false },
   });
@@ -410,7 +411,7 @@ export function pickShot(shot) {
 /* x, y in the opponents' own frame */
 export function aimAt(x, y) {
   const g = get();
-  if (g.phase === 'SERVE') { commitServe({ shot: 'serve', x: Math.max(4.5, x), y, d: 'deep', l: 1, risk: 'normal' }); return; }
+  if (g.phase === 'SERVE') { commitServe({ shot: 'serve', x: Math.max(2.5, x), y, d: x < 6 ? 'mid' : 'deep', l: y < 2.7 ? 0 : y < 5.3 ? 1 : 2, risk: 'normal' }); return; }
   if (g.phase !== 'SHOT' || !g.rail.sel) return;
   const shot = g.rail.sel;
   const d = x < 3 ? 'short' : x < 6 ? 'mid' : 'deep';
@@ -470,3 +471,8 @@ initLobby();
 
 /* Test hook for automated checks */
 if (typeof window !== 'undefined') window.BTU = { TIME, get, aimAt, tapLanding, pickShot, nextPoint, startMatch };
+
+/* First match: a short how-to card before the first serve */
+let pendingStart = false;
+export function dismissHowto() { save('howto', true); set({ howto: false }); if (pendingStart && get().screen === 'play') { pendingStart = false; newPoint(); } }
+export function showHowto() { set({ howto: true }); }

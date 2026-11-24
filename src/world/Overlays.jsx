@@ -1,37 +1,78 @@
-import { useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { useGame, aimAt, tapLanding } from '../game.js';
 import { fromWorld } from './coords.js';
 
-/* Aim zones on their court: 3 depths × 3 lanes. Tap anywhere for an exact aim. */
-export function AimZones() {
-  const targets = useGame((s) => s.targets);
-  if (!targets) return null;
-  const rows = targets.serve ? [[6, 8]] : [[0, 3], [3, 6], [6, 8]];
-  const onDown = (e) => {
-    e.stopPropagation();
-    const p = fromWorld(1, e.point.x, e.point.z);
-    if (p[0] < 0.1 || p[0] > 8 || p[1] < 0 || p[1] > 8) return;
-    aimAt(p[0], p[1]);
-  };
+/* Which depths each shot can reach (as in the 2D game) */
+const ROWS = { drop: ['short'], lob: ['mid', 'deep'], block: ['short', 'mid'], hook: ['mid', 'deep'] };
+const BAND = { short: [0, 3], mid: [3, 6], deep: [6, 8] };
+const BAND_NAME = { short: '0–3 m', mid: '3–6 m', deep: '6–8 m' };
+
+function Zone({ x0, x1, y0, y1, color, label, hot, onPick, onHover }) {
+  /* own-frame x (from net) / y (across) on their side → world */
+  const cx = (y0 + y1) / 2 - 4, cz = -(x0 + x1) / 2, w = y1 - y0 - 0.1, d = x1 - x0 - 0.1;
+  const edge = useMemo(() => new THREE.PlaneGeometry(w, d), [w, d]);
   return (
     <group>
-      {rows.map(([a, b]) => [0, 1, 2].map((l) => {
-        const y0 = (l * 8) / 3, y1 = ((l + 1) * 8) / 3;
-        return (
-          <mesh key={a + '-' + l} position={[(y0 + y1) / 2 - 4, 0.02, -(a + b) / 2]} rotation={[-Math.PI / 2, 0, 0]} onPointerDown={onDown}>
-            <planeGeometry args={[8 / 3 - 0.12, b - a - 0.12]} />
-            <meshBasicMaterial color={targets.serve ? '#FF9F1C' : '#00A79E'} transparent opacity={0.22} depthWrite={false} />
-          </mesh>
-        );
-      }))}
-      {/* catch taps in the gaps */}
-      <mesh position={[0, 0.015, -4]} rotation={[-Math.PI / 2, 0, 0]} onPointerDown={onDown}>
-        <planeGeometry args={[8, 8]} />
-        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+      <mesh position={[cx, 0.02, cz]} rotation={[-Math.PI / 2, 0, 0]}
+        onPointerDown={(e) => { e.stopPropagation(); onPick(e.point); }}
+        onPointerOver={(e) => { e.stopPropagation(); onHover(true); }}
+        onPointerOut={() => onHover(false)}>
+        <planeGeometry args={[w, d]} />
+        <meshBasicMaterial color={hot === 2 ? '#FF4D6D' : color} transparent opacity={hot === 2 ? 0.55 : hot === 1 ? 0.38 : 0.2} depthWrite={false} />
       </mesh>
+      {/* outline */}
+      <lineSegments position={[cx, 0.025, cz]} rotation={[-Math.PI / 2, 0, 0]}>
+        <edgesGeometry args={[edge]} />
+        <lineBasicMaterial color={hot === 2 ? '#FF4D6D' : color} transparent opacity={hot ? 1 : 0.7} />
+      </lineSegments>
+      {label && (
+        <Html center position={[cx, 0.05, cz]} zIndexRange={[10, 0]} style={{ pointerEvents: 'none' }}>
+          <div className={'zlabel' + (hot === 2 ? ' hot' : '')} style={{ color: hot === 2 ? '#fff' : color, background: hot === 2 ? '#FF4D6D' : 'rgba(255,255,255,.85)' }}>{label}</div>
+        </Html>
+      )}
+    </group>
+  );
+}
+
+/*
+ * Serve: five numbered lanes across their court (tap a lane, the exact spot is your aim).
+ * Shot: nine sections (3 depths × 3 lanes) limited to what your shot can reach; the one you tap lights up.
+ */
+export function AimZones() {
+  const targets = useGame((s) => s.targets);
+  const sel = useGame((s) => s.rail && s.rail.sel);
+  const [hover, setHover] = useState(null);
+  const [picked, setPicked] = useState(null);
+  useEffect(() => { setPicked(null); setHover(null); }, [targets, sel]);
+  if (!targets) return null;
+  const pick = (key, p) => {
+    if (picked) return;
+    const o = fromWorld(1, p.x, p.z);
+    if (o[0] < 0.1 || o[0] > 8 || o[1] < 0 || o[1] > 8) return;
+    setPicked(key);
+    setTimeout(() => aimAt(o[0], o[1]), 280); // let the highlight show first
+  };
+  const hotOf = (k) => (picked === k ? 2 : hover === k && !picked ? 1 : 0);
+  if (targets.serve) {
+    return (
+      <group>
+        {[0, 1, 2, 3, 4].map((b) => {
+          const k = 's' + b;
+          return <Zone key={k} x0={0.3} x1={8} y0={b * 1.6} y1={b * 1.6 + 1.6} color="#FF9F1C" label={String(b + 1)} hot={hotOf(k)} onPick={(p) => pick(k, p)} onHover={(h) => setHover(h ? k : null)} />;
+        })}
+      </group>
+    );
+  }
+  const rows = ROWS[sel] || ['short', 'mid', 'deep'];
+  return (
+    <group>
+      {rows.map((d) => [0, 1, 2].map((l) => {
+        const k = d + l;
+        return <Zone key={k} x0={BAND[d][0]} x1={BAND[d][1]} y0={(l * 8) / 3} y1={((l + 1) * 8) / 3} color="#00A79E" label={l === 1 ? BAND_NAME[d] : null} hot={hotOf(k)} onPick={(p) => pick(k, p)} onHover={(h) => setHover(h ? k : null)} />;
+      }))}
     </group>
   );
 }
