@@ -2220,7 +2220,7 @@ function noise(t,dur,ftype,fc,q,g){var a=acx();if(!a)return;var n=a.createBuffer
 
 /* Beach party music: an original samba groove, synthesised live (no recordings).
    Surdo on 2 and 4, telecoteco tamborim, shaker 16ths, agogô bells, bass and cavaquinho stabs over C6 - A7 - Dm7 - G7 */
-var BTU_BUILD="25 Nov · 3 (3D 0.5)";var MUS={on:false,bus:null,next:0,step:0,timer:0,bpm:104};
+var BTU_BUILD="25 Nov · 4 (3D 0.7)";var MUS={on:false,bus:null,next:0,step:0,timer:0,bpm:104};
 function musOn(){return load("music","1")==="1"}
 function musStart(){/* music removed until a real samba recording is added */return;if(MUS.on||!musOn())return;var a=acx();if(!a)return;if(!MUS.bus){MUS.bus=a.createGain();MUS.bus.connect(MASTER)}
   MUS.bus.gain.cancelScheduledValues(a.currentTime);MUS.bus.gain.setValueAtTime(0.0001,a.currentTime);MUS.bus.gain.exponentialRampToValueAtTime(0.32,a.currentTime+1.2);
@@ -2981,16 +2981,17 @@ if(!load("welcomed","")&&!HASH0){var wv={side:"L",rules:"open",level:"beginner",
   $("w-go").onclick=function(){closeW(false)};$("w-skip").onclick=function(){closeW(true)}}
 
 /* ---------- Play vs the computer: the 3D game (play3d/) lives inside the Play tab ---------- */
-var P3D=true,P3Q=null,P3READY=false,P3D_V="0.5";
+var P3D=true,P3Q=null,P3READY=false,P3D_V="0.7";
 function p3dFrame(){var f=$("p3d-frame");if(!f){f=document.createElement("iframe");f.id="p3d-frame";f.title="Beach tennis 3D";f.setAttribute("allow","fullscreen; autoplay");
     f.src=(window.P3D_URL||"play3d/index.html")+"?embed=1&v="+P3D_V+"&level="+encodeURIComponent(state.level||"intermediate");$("play3d").appendChild(f)}return f}
 function p3dPost(m){var f=p3dFrame();m.btu3d=1;if(!P3READY){P3Q=m;return}try{f.contentWindow.postMessage(m,"*")}catch(e){}}
 function p3dSize(){var s=$("play3d");if(!s||s.hidden||document.body.classList.contains("p3d-live"))return;var top=s.getBoundingClientRect().top+window.scrollY;s.style.height=Math.max(420,window.innerHeight-top-12)+"px"}
-function p3dShow(){p3dFrame();p3dSize();p3dPost({type:"level",level:state.level});track("play3d_open",{})}
-function p3dLive(on){document.body.classList.toggle("p3d-live",!!on);if(!on)setTimeout(p3dSize,30);else window.scrollTo(0,0)}
+function p3dShow(){window.scrollTo(0,0);p3dFrame();p3dSize();p3dPost({type:"level",level:state.level});track("play3d_open",{})}
+function p3dLive(on){document.body.classList.toggle("p3d-live",!!on);window.scrollTo(0,0);if(!on)setTimeout(p3dSize,30)}
 function p3dStart(r){var i=RIVALS.indexOf(r);p3dPost({type:"start",level:state.level,rival:r?{name:r.pair,lv:i>=0?i+1:1}:null});track("match_started",{rival:r&&r.id,mode:"3d"})}
 window.addEventListener("message",function(e){var m=e.data;if(!m||!m.btu3d)return;
   if(m.type==="ready"){P3READY=true;var l=$("p3d-load");if(l)l.remove();if(P3Q){var q=P3Q;P3Q=null;p3dPost(q)}}
-  if(m.type==="live")p3dLive(m.on)});
+  if(m.type==="live")p3dLive(m.on);
+  if(m.type==="nav"){p3dLive(false);setTab(m.tab==="learn"?"learn":"home")}});
 window.addEventListener("resize",p3dSize);
 (function(){var sm=startMatch;startMatch=function(r){if(P3D&&state.tab==="compete"){p3dStart(r);return}return sm.apply(this,arguments)}})();
